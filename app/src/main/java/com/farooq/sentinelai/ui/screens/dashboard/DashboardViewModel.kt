@@ -3,10 +3,9 @@ package com.farooq.sentinelai.ui.screens.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.farooq.sentinelai.data.models.*
-import com.farooq.sentinelai.monitoring.battery.BatteryMonitor
-import com.farooq.sentinelai.monitoring.cpu.CPUMonitor
-import com.farooq.sentinelai.monitoring.network.NetworkMonitor
-import com.farooq.sentinelai.monitoring.ram.RAMMonitor
+import com.farooq.sentinelai.data.repository.TelemetryRepository
+import com.patrykandpatrick.vico.core.entry.ChartEntryModelProducer
+import com.patrykandpatrick.vico.core.entry.entryOf
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -14,40 +13,55 @@ import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
-    private val cpuMonitor: CPUMonitor,
-    private val ramMonitor: RAMMonitor,
-    private val batteryMonitor: BatteryMonitor,
-    private val networkMonitor: NetworkMonitor
+    private val telemetryRepository: TelemetryRepository
 ) : ViewModel() {
 
-    private val _cpuMetrics = MutableStateFlow<CpuMetrics?>(null)
-    val cpuMetrics: StateFlow<CpuMetrics?> = _cpuMetrics
+    val cpuMetrics: StateFlow<CpuMetrics?> = telemetryRepository.cpuMetrics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _ramMetrics = MutableStateFlow<RamMetrics?>(null)
-    val ramMetrics: StateFlow<RamMetrics?> = _ramMetrics
+    val ramMetrics: StateFlow<RamMetrics?> = telemetryRepository.ramMetrics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _batteryMetrics = MutableStateFlow<BatteryMetrics?>(null)
-    val batteryMetrics: StateFlow<BatteryMetrics?> = _batteryMetrics
+    val batteryMetrics: StateFlow<BatteryMetrics?> = telemetryRepository.batteryMetrics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _networkMetrics = MutableStateFlow<NetworkMetrics?>(null)
-    val networkMetrics: StateFlow<NetworkMetrics?> = _networkMetrics
+    val networkMetrics: StateFlow<NetworkMetrics?> = telemetryRepository.networkMetrics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val healthScore: StateFlow<Int> = telemetryRepository.healthScore
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 100)
+
+    val aiInsights: StateFlow<List<String>> = telemetryRepository.aiInsights
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Chart Model Producers for Sparklines/Small Charts
+    val cpuChartProducer = ChartEntryModelProducer()
+    val ramChartProducer = ChartEntryModelProducer()
 
     init {
-        startMonitoring()
+        observeMetricsForCharts()
     }
 
-    private fun startMonitoring() {
+    private fun observeMetricsForCharts() {
         viewModelScope.launch {
-            cpuMonitor.getCpuMetrics().collect { _cpuMetrics.value = it }
+            cpuMetrics.collect { metrics ->
+                metrics?.history?.let { history ->
+                    if (history.isNotEmpty()) {
+                        val entries = history.mapIndexed { index, value -> entryOf(index, value) }
+                        cpuChartProducer.setEntries(entries)
+                    }
+                }
+            }
         }
         viewModelScope.launch {
-            ramMonitor.getRamMetrics().collect { _ramMetrics.value = it }
-        }
-        viewModelScope.launch {
-            batteryMonitor.getBatteryMetrics().collect { _batteryMetrics.value = it }
-        }
-        viewModelScope.launch {
-            networkMonitor.getNetworkMetrics().collect { _networkMetrics.value = it }
+            ramMetrics.collect { metrics ->
+                metrics?.history?.let { history ->
+                    if (history.isNotEmpty()) {
+                        val entries = history.mapIndexed { index, value -> entryOf(index, value) }
+                        ramChartProducer.setEntries(entries)
+                    }
+                }
+            }
         }
     }
 }

@@ -9,8 +9,11 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import java.net.InetAddress
+import java.net.NetworkInterface
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 
 @Singleton
 class NetworkMonitor @Inject constructor(
@@ -18,19 +21,20 @@ class NetworkMonitor @Inject constructor(
 ) {
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     private val history = mutableListOf<Double>()
-    private val maxHistorySize = 20
+    private val maxHistorySize = 30
 
     fun getNetworkMetrics(): Flow<NetworkMetrics> = flow {
         var lastRxBytes = TrafficStats.getTotalRxBytes()
         var lastTxBytes = TrafficStats.getTotalTxBytes()
         
         while (true) {
-            delay(2000)
+            delay(1000)
             val currentRxBytes = TrafficStats.getTotalRxBytes()
             val currentTxBytes = TrafficStats.getTotalTxBytes()
             
-            val downloadSpeed = (currentRxBytes - lastRxBytes) / 1024.0 / 2.0 // KB/s
-            val uploadSpeed = (currentTxBytes - lastTxBytes) / 1024.0 / 2.0 // KB/s
+            // Speed in KB/s
+            val downloadSpeed = (currentRxBytes - lastRxBytes) / 1024.0
+            val uploadSpeed = (currentTxBytes - lastTxBytes) / 1024.0
             
             lastRxBytes = currentRxBytes
             lastTxBytes = currentTxBytes
@@ -38,6 +42,8 @@ class NetworkMonitor @Inject constructor(
             val activeNetwork = connectivityManager.activeNetwork
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
             val isWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+
+            val ipAddress = getIPAddress() ?: "127.0.0.1"
 
             history.add(downloadSpeed)
             if (history.size > maxHistorySize) history.removeAt(0)
@@ -47,10 +53,31 @@ class NetworkMonitor @Inject constructor(
                     downloadSpeedKbps = downloadSpeed,
                     uploadSpeedKbps = uploadSpeed,
                     isWifiConnected = isWifi,
-                    ipAddress = "192.168.1.1", // Simplified
+                    ipAddress = ipAddress,
                     downloadHistory = history.toList()
                 )
             )
         }
+    }
+
+    private fun getIPAddress(): String? {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val networkInterface = interfaces.nextElement()
+                val addresses = networkInterface.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val address = addresses.nextElement()
+                    if (!address.isLoopbackAddress) {
+                        val sAddr = address.hostAddress ?: continue
+                        val isIPv4 = sAddr.indexOf(':') < 0
+                        if (isIPv4) return sAddr
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // ignore
+        }
+        return null
     }
 }

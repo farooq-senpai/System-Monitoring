@@ -12,7 +12,7 @@ data class RamMetrics(
     val totalBytes: Long,
     val availableBytes: Long,
     val usagePercentage: Float,
-    val history: List<Float> = emptyList()
+    val history: List<Float>
 )
 
 data class BatteryMetrics(
